@@ -1,4 +1,4 @@
-const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
+        const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkb3plamZoeHd0Ynl1Y3p2enljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5ODgwNzIsImV4cCI6MjA4NjU2NDA3Mn0.yXccuiEV1sjZKHVJ4q-TuEuHDOsn7ywrus8RlA-o628';
 
         let usuarioEncontrado = null;
@@ -348,6 +348,22 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
                     horarios: horariosSelecionados,
                     turnos: turnosArray
                 });
+
+                const usuariosResponse = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?select=nickname`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const usuarios = await usuariosResponse.json();
+                
+                if (Array.isArray(usuarios)) {
+                    for (const u of usuarios) {
+                        await criarNotificacao(
+                            u.nickname,
+                            'Horário Atualizado',
+                            `${usuario.nickname} atualizou o horário de ${nick}`,
+                            'info'
+                        );
+                    }
+                }
                 
                 mostrarToast('Sucesso', `${horariosSelecionados.length} horário(s) em ${turnosArray.length} turno(s) atualizado(s)`, 'success');
                 document.getElementById('data-alteracao').value = new Date().toLocaleString('pt-BR');
@@ -405,6 +421,7 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
             if (solicitacaoNick) solicitacaoNick.textContent = nick;
             const usuario = await verificarUsuario(nick);
             usuarioEncontrado = usuario;
+            
             if (usuario) {
                 if (usuario.status === 'aprovado') {
                     const loginStatus = document.getElementById('login-status');
@@ -422,9 +439,17 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
                     btn.disabled = true;
                     btn.textContent = 'Aguardando aprovação';
                 } else if (usuario.status === 'rejeitado') {
-                    mostrarMensagem('error', 'Seu acesso foi rejeitado.');
+                    const solicitacaoResponse = await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso?nickname=eq.${nick}&order=id.desc&limit=1`, {
+                        headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                    });
+                    const solicitacoes = await solicitacaoResponse.json();
+                    const justificativa = solicitacoes[0]?.justificativa || 'não informado';
+                    
+                    mostrarMensagem('error', `Acesso negado. Motivos: ${justificativa}`);
                     document.getElementById('login-usuario-encontrado').style.display = 'none';
-                    document.getElementById('login-solicitacao').style.display = 'block';
+                    document.getElementById('login-solicitacao').style.display = 'none';
+
+                    document.getElementById('login-btn-confirmar').disabled = true;
                 }
             } else {
                 document.getElementById('login-usuario-encontrado').style.display = 'none';
@@ -460,57 +485,62 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
             }));
             
             await registrarLog('login', 'login', usuarioEncontrado.nickname, { cargo: usuarioEncontrado.cargo, cargo_executivo: cargoExecutivo });
-            document.getElementById('login-overlay').classList.add('hidden');
             
-            const headerAvatar = document.getElementById('header-profile-avatar');
-            const headerName = document.getElementById('header-profile-name');
-            const headerRole = document.getElementById('header-profile-role');
-            if (headerAvatar) headerAvatar.src = document.getElementById('login-avatar')?.src || '';
-            if (headerName) headerName.textContent = usuarioEncontrado.nickname;
-            if (headerRole) headerRole.textContent = usuarioEncontrado.cargo;
+            mostrarToast('Acesso liberado!', 'Redirecionando em 5 segundos...', 'success');
             
-            const sidebarName = document.getElementById('profile-sidebar-name');
-            const sidebarImg = document.getElementById('profile-sidebar-img');
-            if (sidebarName) sidebarName.textContent = usuarioEncontrado.nickname;
-            if (sidebarImg) sidebarImg.src = document.getElementById('login-avatar')?.src || '';
-            
-            const profileNick = document.getElementById('profile-nickname');
-            const profileCargoExecutivo = document.getElementById('profile-cargo-executivo');
-            const profileCargoTag = document.getElementById('profile-cargo-tag');
-            const profileAvatar = document.getElementById('profile-avatar-img');
-            if (profileNick) profileNick.textContent = usuarioEncontrado.nickname;
-            if (profileCargoExecutivo) profileCargoExecutivo.textContent = cargoExecutivo;
-            if (profileCargoTag) {
-                if (usuarioEncontrado.cargo === 'Admin') profileCargoTag.textContent = 'ADMIN';
-                else if (usuarioEncontrado.cargo === 'DEV') profileCargoTag.textContent = 'DEV';
-                else if (usuarioEncontrado.cargo === 'Membro') profileCargoTag.textContent = 'MEMBRO';
-                else profileCargoTag.style.display = 'none';
-            }
-            if (profileAvatar) profileAvatar.src = document.getElementById('login-avatar')?.src || '';
-            
-            const drawerAvatar = document.getElementById('drawer-avatar-img');
-            const drawerName = document.getElementById('drawer-name');
-            const drawerRole = document.getElementById('drawer-role');
-            if (drawerAvatar) drawerAvatar.src = document.getElementById('login-avatar')?.src || '';
-            if (drawerName) drawerName.textContent = usuarioEncontrado.nickname;
-            if (drawerRole) drawerRole.textContent = usuarioEncontrado.cargo;
-            
-            const avAvaliador = document.getElementById('av-avaliador');
-            if (avAvaliador) avAvaliador.value = usuarioEncontrado.nickname;
-            const sindicanteNick = document.getElementById('sindicante-nick');
-            if (sindicanteNick) sindicanteNick.value = usuarioEncontrado.nickname;
-            const ouvAutor = document.getElementById('ouv-autor');
-            if (ouvAutor) ouvAutor.value = usuarioEncontrado.nickname;
-            
-            usuariosOnline.add(usuarioEncontrado.nickname);
-            atualizarVisibilidadeAdmin();
-            carregarAtividades();
-            carregarNotificacoes();
-            carregarBloqueios();
-            carregarHorarios();
-            iniciarRealtime();
-            iniciarAtualizacaoEmTempoReal();
-            mostrarToast('Bem-vindo', `Login realizado como ${usuarioEncontrado.nickname}`, 'success');
+            setTimeout(() => {
+                document.getElementById('login-overlay').classList.add('hidden');
+                
+                const headerAvatar = document.getElementById('header-profile-avatar');
+                const headerName = document.getElementById('header-profile-name');
+                const headerRole = document.getElementById('header-profile-role');
+                if (headerAvatar) headerAvatar.src = document.getElementById('login-avatar')?.src || '';
+                if (headerName) headerName.textContent = usuarioEncontrado.nickname;
+                if (headerRole) headerRole.textContent = usuarioEncontrado.cargo;
+                
+                const sidebarName = document.getElementById('profile-sidebar-name');
+                const sidebarImg = document.getElementById('profile-sidebar-img');
+                if (sidebarName) sidebarName.textContent = usuarioEncontrado.nickname;
+                if (sidebarImg) sidebarImg.src = document.getElementById('login-avatar')?.src || '';
+                
+                const profileNick = document.getElementById('profile-nickname');
+                const profileCargoExecutivo = document.getElementById('profile-cargo-executivo');
+                const profileCargoTag = document.getElementById('profile-cargo-tag');
+                const profileAvatar = document.getElementById('profile-avatar-img');
+                if (profileNick) profileNick.textContent = usuarioEncontrado.nickname;
+                if (profileCargoExecutivo) profileCargoExecutivo.textContent = cargoExecutivo;
+                if (profileCargoTag) {
+                    if (usuarioEncontrado.cargo === 'Admin') profileCargoTag.textContent = 'ADMIN';
+                    else if (usuarioEncontrado.cargo === 'DEV') profileCargoTag.textContent = 'DEV';
+                    else if (usuarioEncontrado.cargo === 'Membro') profileCargoTag.textContent = 'MEMBRO';
+                    else profileCargoTag.style.display = 'none';
+                }
+                if (profileAvatar) profileAvatar.src = document.getElementById('login-avatar')?.src || '';
+                
+                const drawerAvatar = document.getElementById('drawer-avatar-img');
+                const drawerName = document.getElementById('drawer-name');
+                const drawerRole = document.getElementById('drawer-role');
+                if (drawerAvatar) drawerAvatar.src = document.getElementById('login-avatar')?.src || '';
+                if (drawerName) drawerName.textContent = usuarioEncontrado.nickname;
+                if (drawerRole) drawerRole.textContent = usuarioEncontrado.cargo;
+                
+                const avAvaliador = document.getElementById('av-avaliador');
+                if (avAvaliador) avAvaliador.value = usuarioEncontrado.nickname;
+                const sindicanteNick = document.getElementById('sindicante-nick');
+                if (sindicanteNick) sindicanteNick.value = usuarioEncontrado.nickname;
+                const ouvAutor = document.getElementById('ouv-autor');
+                if (ouvAutor) ouvAutor.value = usuarioEncontrado.nickname;
+                
+                usuariosOnline.add(usuarioEncontrado.nickname);
+                atualizarVisibilidadeAdmin();
+                carregarAtividades();
+                carregarNotificacoes();
+                carregarBloqueios();
+                carregarHorarios();
+                iniciarRealtime();
+                iniciarAtualizacaoEmTempoReal();
+                mostrarToast('Bem-vindo', `Login realizado como ${usuarioEncontrado.nickname}`, 'success');
+            }, 5000);
         }
 
         function iniciarRealtime() {
@@ -535,6 +565,18 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
                     payload: {},
                     ref: '3'
                 }));
+                ws.send(JSON.stringify({
+                    topic: 'realtime:solicitacoes',
+                    event: 'phx_join',
+                    payload: {},
+                    ref: '4'
+                }));
+                ws.send(JSON.stringify({
+                    topic: 'realtime:notificacoes',
+                    event: 'phx_join',
+                    payload: {},
+                    ref: '5'
+                }));
             };
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
@@ -554,6 +596,15 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
                         }
                     } else if (data.topic === 'realtime:horarios') {
                         carregarHorarios();
+                    } else if (data.topic === 'realtime:solicitacoes') {
+                        if (verificarPermissaoAdmin()) {
+                            carregarSolicitacoes();
+                        }
+                    } else if (data.topic === 'realtime:notificacoes') {
+                        const usuario = JSON.parse(sessionStorage.getItem('usuario') || '{}');
+                        if (data.payload.record.usuario_nick === usuario.nickname) {
+                            carregarNotificacoes();
+                        }
                     }
                 }
             };
@@ -610,19 +661,60 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
             const nick = document.getElementById('solicitacao-nick')?.textContent;
             const motivo = document.getElementById('motivo-solicitacao')?.value;
             if (!nick) return;
+            
             try {
+                const checkResponse = await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso?nickname=eq.${nick}&status=eq.pendente`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const existente = await checkResponse.json();
+                
+                if (existente.length > 0) {
+                    mostrarMensagem('error', 'Você já possui uma solicitação pendente. Aguarde a análise.');
+                    mostrarToast('Solicitação pendente', 'Aguarde a aprovação do administrador', 'warning');
+                    return;
+                }
+
+                const rejeitadoResponse = await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso?nickname=eq.${nick}&status=eq.rejeitada&order=id.desc&limit=1`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const rejeitado = await rejeitadoResponse.json();
+                
+                if (rejeitado.length > 0) {
+                    mostrarMensagem('error', `Seu acesso foi negado. Motivos: ${rejeitado[0].justificativa || 'não informado'}`);
+                    return;
+                }
+                
                 await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso`, {
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ nickname: nick, motivo: motivo || '', status: 'pendente' })
                 });
+                
                 await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
                     method: 'POST',
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ nickname: nick, cargo: 'Membro', status: 'pendente' })
                 });
+
+                const adminsResponse = await fetch(`${SUPABASE_URL}/rest/v1/usuarios?or=(cargo.eq.Admin,cargo.eq.DEV)`, {
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+                });
+                const admins = await adminsResponse.json();
+                
+                if (Array.isArray(admins)) {
+                    for (const admin of admins) {
+                        await criarNotificacao(
+                            admin.nickname,
+                            'Nova Solicitação de Acesso',
+                            `${nick} solicitou acesso ao sistema.`,
+                            'info'
+                        );
+                    }
+                }
+                
                 mostrarMensagem('success', 'Solicitação enviada! Aguarde aprovação.');
                 mostrarToast('Solicitação enviada', 'Aguarde a aprovação do administrador', 'success');
+                
                 const btn = document.getElementById('btn-solicitar');
                 const input = document.getElementById('motivo-solicitacao');
                 btn.disabled = true;
@@ -906,29 +998,56 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
         async function processarSolicitacao(id, status) {
             if (!verificarPermissaoAdmin()) return;
             const usuario = JSON.parse(sessionStorage.getItem('usuario') || '{}');
+            
+            let justificativa = '';
+            if (status === 'rejeitada') {
+                justificativa = prompt('Digite o motivo da rejeição:');
+                if (!justificativa) {
+                    mostrarToast('Cancelado', 'É necessário informar um motivo para rejeitar', 'warning');
+                    return;
+                }
+            }
+            
             try {
                 await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso?id=eq.${id}`, {
                     method: 'PATCH',
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: status, processado_por: usuario.nickname, data_processamento: new Date().toISOString() })
+                    body: JSON.stringify({ 
+                        status: status, 
+                        justificativa: justificativa,
+                        processado_por: usuario.nickname, 
+                        data_processamento: new Date().toISOString() 
+                    })
                 });
+                
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/solicitacoes_acesso?id=eq.${id}&select=nickname`, {
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
                 });
                 const solicitacao = (await response.json())[0];
+                
                 await fetch(`${SUPABASE_URL}/rest/v1/usuarios?nickname=eq.${solicitacao.nickname}`, {
                     method: 'PATCH',
                     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: status === 'aprovada' ? 'aprovado' : 'rejeitado' })
                 });
-                await registrarLog('usuario', `solicitacao_${status}`, usuario.nickname, { alvo: solicitacao.nickname });
                 
-                criarNotificacao(
-                    solicitacao.nickname,
-                    status === 'aprovada' ? 'Acesso Aprovado' : 'Acesso Rejeitado',
-                    `Sua solicitação de acesso foi ${status === 'aprovada' ? 'aprovada' : 'rejeitada'}.`,
-                    status === 'aprovada' ? 'success' : 'error'
-                );
+                await registrarLog('usuario', `solicitacao_${status}`, usuario.nickname, { alvo: solicitacao.nickname, justificativa });
+
+                if (status === 'aprovada') {
+                    await criarNotificacao(
+                        solicitacao.nickname,
+                        'Acesso aprovado',
+                        `Sua solicitação de acesso foi aprovada. Faça login novamente.`,
+                        'success'
+                    );
+                } else {
+                    await criarNotificacao(
+                        solicitacao.nickname,
+                        'Acesso negado',
+                        `Sua solicitação de acesso foi negada. Motivos: ${justificativa}`,
+                        'error'
+                    );
+                }
                 
                 mostrarToast('Solicitação processada', `Acesso ${status === 'aprovada' ? 'aprovado' : 'rejeitado'} para ${solicitacao.nickname}`, 'success');
                 carregarSolicitacoes();
@@ -1259,7 +1378,7 @@ const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
             try {
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/atividades`, {
                     method: 'POST',
-                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' }, // 'Prefer' ajuda a pedir o objeto de volta
+                    headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' },
                     body: JSON.stringify({
                         titulo: titulo,
                         descricao: descricao || '',
