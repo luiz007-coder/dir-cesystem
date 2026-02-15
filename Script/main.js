@@ -17,10 +17,8 @@
         let currentPage = 1;
         let itemsPerPage = 3;
         let currentFilter = 'all';
-        let usuariosOnline = new Set();
         let notificacoesNaoLidas = 0;
         let paginaBloqueada = { coleta: false, avMensal: false };
-        let bloqueiosPendentes = { coleta: false, avMensal: false };
         let alteracoesCargos = {};
         let intervaloAtualizacao = null;
         const INTERVALO_ATUALIZACAO = 2000;
@@ -43,6 +41,8 @@
 
         function mostrarToast(titulo, mensagem, tipo = 'info') {
             const container = document.getElementById('toast-container');
+            if (!container) return;
+            
             const toast = document.createElement('div');
             toast.className = `toast ${tipo}`;
             
@@ -64,7 +64,7 @@
             
             setTimeout(() => {
                 if (toast.parentElement) toast.remove();
-            }, 5000);
+            }, 3000);
         }
 
         async function pegarUsername() {
@@ -77,7 +77,7 @@
             } catch (err) {
                 console.error('Erro ao pegar username:', err);
             }
-            return ',youiz';
+            return null;
         }
 
         async function carregarDados() {
@@ -85,8 +85,10 @@
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/dados_sistema?select=*`, {
                     headers: {
                         'apikey': SUPABASE_KEY,
-                        'Authorization': 'Bearer ' + SUPABASE_KEY
-                    }
+                        'Authorization': 'Bearer ' + SUPABASE_KEY,
+                        'Cache-Control': 'no-cache'
+                    },
+                    cache: 'no-store'
                 });
 
                 if (response.ok) {
@@ -96,6 +98,8 @@
                         if (!DADOS.solicitacoes) DADOS.solicitacoes = [];
                         if (!DADOS.notificacoes) DADOS.notificacoes = [];
                         if (!DADOS.links) DADOS.links = [];
+                        if (!DADOS.atividades) DADOS.atividades = [];
+                        if (!DADOS.bloqueios) DADOS.bloqueios = [];
                         return true;
                     }
                 }
@@ -157,6 +161,11 @@
             return usuarioEncontrado && (usuarioEncontrado.cargo === 'Admin' || usuarioEncontrado.cargo === 'DEV');
         }
 
+        function verificarUsuarioAutorizado(nickname) {
+            const usuario = DADOS.usuarios?.find(u => u.nickname?.toLowerCase() === nickname.toLowerCase());
+            return usuario && usuario.status === 'aprovado';
+        }
+
         function atualizarVisibilidadeAdmin() {
             const temPermissao = verificarPermissaoAdmin();
             const menuAdmin = document.getElementById('menu-admin');
@@ -171,7 +180,7 @@
             modal.id = 'modal-editar-cargo';
             modal.innerHTML = `
                 <div class="modal-content">
-                    <h3>Editar Cargo Executivo</h3>
+                    <h3>EDITAR CARGO</h3>
                     <select id="modal-cargo-select" class="styled-select">
                         <option value="Supervisor">Supervisor</option>
                         <option value="Supervisor-Geral">Supervisor-Geral</option>
@@ -215,7 +224,6 @@
                 DADOS.usuarios[index].cargo_executivo_alterado = true;
                 usuarioEncontrado.cargo_executivo = novoCargo;
                 
-                document.getElementById('profile-cargo-executivo').textContent = novoCargo;
                 document.getElementById('profile-info-cargo-executivo').textContent = novoCargo;
                 
                 const usuarioSalvo = JSON.parse(sessionStorage.getItem('usuario') || '{}');
@@ -226,7 +234,7 @@
                 await registrarLog('usuario', 'alteracao_cargo_executivo', usuarioEncontrado.nickname, { novoCargo });
                 await salvarDados();
                 
-                mostrarToast('Cargo atualizado', `Seu cargo executivo agora é ${novoCargo}`, 'success');
+                mostrarToast('Cargo atualizado', `Seu cargo agora é ${novoCargo}`, 'success');
                 fecharModal();
             }
         }
@@ -525,6 +533,19 @@
             
             await carregarDados();
             
+            const usuarioSalvo = sessionStorage.getItem('usuario');
+            if (usuarioSalvo) {
+                try {
+                    const userData = JSON.parse(usuarioSalvo);
+                    if (verificarUsuarioAutorizado(userData.nickname)) {
+                        realizarLoginAutomatico(userData);
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Erro ao carregar usuário salvo:', e);
+                }
+            }
+            
             loading.style.display = 'block';
             content.style.display = 'none';
             
@@ -550,15 +571,24 @@
             const usuario = DADOS.usuarios?.find(u => u.nickname?.toLowerCase() === nick.toLowerCase());
             usuarioEncontrado = usuario;
             
+            const cargoSelect = document.getElementById('login-cargo-executivo');
+            
             if (usuario) {
                 if (usuario.status === 'aprovado') {
-                    document.getElementById('login-usuario-encontrado').style.display = 'block';
-                    document.getElementById('login-solicitacao').style.display = 'none';
-                    if (usuario.cargo_executivo && usuario.cargo_executivo_alterado) {
-                        document.getElementById('login-cargo-executivo').value = usuario.cargo_executivo;
-                        document.getElementById('login-cargo-executivo').disabled = true;
-                    } else if (usuario.cargo_executivo) {
-                        document.getElementById('login-cargo-executivo').value = usuario.cargo_executivo;
+                    if (usuario.cargo_executivo && !usuario.primeiro_login) {
+                        realizarLoginAutomatico(usuario);
+                    } else {
+                        document.getElementById('login-usuario-encontrado').style.display = 'block';
+                        document.getElementById('login-solicitacao').style.display = 'none';
+                        cargoSelect.style.display = 'block';
+                        document.querySelector('.login-cargo-select label').style.display = 'block';
+                        
+                        if (usuario.cargo_executivo && usuario.primeiro_login) {
+                            cargoSelect.value = usuario.cargo_executivo;
+                        }
+                        
+                        loading.style.display = 'none';
+                        content.style.display = 'block';
                     }
                 } else if (usuario.status === 'pendente') {
                     document.getElementById('login-usuario-encontrado').style.display = 'none';
@@ -568,6 +598,8 @@
                     btn.textContent = 'Aguardando aprovação';
                     document.getElementById('mensagem-aguarde').style.display = 'block';
                     mostrarMensagem('info', 'Sua solicitação está pendente de aprovação.');
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
                 } else if (usuario.status === 'rejeitado') {
                     const solicitacao = DADOS.solicitacoes?.find(s => s.nickname === nick && s.status === 'rejeitada');
                     const justificativa = solicitacao?.justificativa || 'não informado';
@@ -585,147 +617,88 @@
                         const msg = document.getElementById('login-message');
                         if (msg) msg.style.display = 'none';
                     }, 3000);
+                    
+                    loading.style.display = 'none';
+                    content.style.display = 'block';
                 }
             } else {
                 document.getElementById('login-usuario-encontrado').style.display = 'none';
                 document.getElementById('login-solicitacao').style.display = 'block';
                 document.getElementById('mensagem-aguarde').style.display = 'none';
                 mostrarMensagem('info', 'Usuário não encontrado. Solicite acesso.');
+                loading.style.display = 'none';
+                content.style.display = 'block';
             }
-            loading.style.display = 'none';
-            content.style.display = 'block';
         }
 
-        async function enviarSolicitacao() {
-            const nick = document.getElementById('solicitacao-nick')?.textContent;
-            const motivo = document.getElementById('motivo-solicitacao')?.value || '';
-            
-            if (!nick) return;
-            
-            const usuarioIndex = DADOS.usuarios?.findIndex(u => u.nickname === nick);
-            if (usuarioIndex !== -1) {
-                DADOS.usuarios[usuarioIndex].status = 'pendente';
-            } else {
-                if (!DADOS.usuarios) DADOS.usuarios = [];
-                DADOS.usuarios.push({
-                    nickname: nick,
-                    cargo: 'Membro',
-                    status: 'pendente',
-                    data_registro: new Date().toISOString()
-                });
-            }
-            
-            if (!DADOS.solicitacoes) DADOS.solicitacoes = [];
-            DADOS.solicitacoes.push({
-                id: Date.now() + Math.random(),
-                nickname: nick,
-                motivo: motivo,
-                status: 'pendente',
-                data_solicitacao: new Date().toISOString()
-            });
-            
-            await salvarDados();
-            
-            document.getElementById('btn-solicitar').disabled = true;
-            document.getElementById('btn-solicitar').textContent = 'Aguardando aprovação';
-            document.getElementById('mensagem-aguarde').style.display = 'block';
-            mostrarMensagem('info', 'Solicitação enviada. Aguarde aprovação.');
-            
-            mostrarToast('Solicitação enviada', 'Sua solicitação de acesso foi registrada', 'success');
-        }
-
-        async function confirmarLogin() {
-            if (!usuarioEncontrado) return;
-            
-            const cargoExecutivo = document.getElementById('login-cargo-executivo')?.value;
-            if (!cargoExecutivo) {
-                mostrarMensagem('error', 'Selecione seu cargo executivo');
-                return;
-            }
-            
-            const index = DADOS.usuarios.findIndex(u => u.nickname === usuarioEncontrado.nickname);
-            if (index !== -1) {
-                DADOS.usuarios[index].cargo_executivo = cargoExecutivo;
-                DADOS.usuarios[index].cargo_executivo_alterado = false;
-                usuarioEncontrado.cargo_executivo = cargoExecutivo;
-            }
+        function realizarLoginAutomatico(usuario) {
+            const avatarUrl = `https://www.habbo.com.br/habbo-imaging/avatarimage?&user=${usuario.nickname}&action=std&direction=2&head_direction=3&img_format=png&gesture=sml&headonly=0&size=l`;
             
             sessionStorage.setItem('usuario', JSON.stringify({
-                nickname: usuarioEncontrado.nickname,
-                cargo: usuarioEncontrado.cargo,
-                cargo_executivo: cargoExecutivo,
-                cargo_executivo_alterado: false,
-                avatar: document.getElementById('login-avatar')?.src || ''
+                nickname: usuario.nickname,
+                cargo: usuario.cargo || 'Membro',
+                cargo_executivo: usuario.cargo_executivo || '',
+                cargo_executivo_alterado: usuario.cargo_executivo_alterado || false,
+                avatar: avatarUrl,
+                primeiro_login: usuario.primeiro_login || false
             }));
-            
-            await registrarLog('login', 'login', usuarioEncontrado.nickname, { cargo: usuarioEncontrado.cargo, cargo_executivo: cargoExecutivo });
-            
-            mostrarToast('Acesso liberado!', 'Redirecionando em 3 segundos...', 'success');
-            
-            setTimeout(() => {
-                document.getElementById('login-overlay').classList.add('hidden');
-                
-                const headerAvatar = document.getElementById('header-profile-avatar');
-                const headerName = document.getElementById('header-profile-name');
-                const headerRole = document.getElementById('header-profile-role');
-                if (headerAvatar) headerAvatar.src = document.getElementById('login-avatar')?.src || '';
-                if (headerName) headerName.textContent = usuarioEncontrado.nickname;
-                if (headerRole) headerRole.textContent = usuarioEncontrado.cargo;
-                
-                const sidebarName = document.getElementById('profile-sidebar-name');
-                const sidebarImg = document.getElementById('profile-sidebar-img');
-                if (sidebarName) sidebarName.textContent = usuarioEncontrado.nickname;
-                if (sidebarImg) sidebarImg.src = document.getElementById('login-avatar')?.src || '';
-                
-                const profileNick = document.getElementById('profile-nickname');
-                const profileCargoExecutivo = document.getElementById('profile-cargo-executivo');
-                const profileCargoTag = document.getElementById('profile-cargo-tag');
-                const profileAvatar = document.getElementById('profile-avatar-img');
-                if (profileNick) profileNick.textContent = usuarioEncontrado.nickname;
-                if (profileCargoExecutivo) profileCargoExecutivo.textContent = cargoExecutivo;
-                if (profileCargoTag) {
-                    if (usuarioEncontrado.cargo === 'Admin') profileCargoTag.textContent = 'ADMIN';
-                    else if (usuarioEncontrado.cargo === 'DEV') profileCargoTag.textContent = 'DEV';
-                    else if (usuarioEncontrado.cargo === 'Membro') profileCargoTag.textContent = 'MEMBRO';
-                    else profileCargoTag.style.display = 'none';
-                }
-                if (profileAvatar) profileAvatar.src = document.getElementById('login-avatar')?.src || '';
-                
-                document.getElementById('profile-info-nick').textContent = usuarioEncontrado.nickname;
-                document.getElementById('profile-info-cargo-executivo').textContent = cargoExecutivo;
-                document.getElementById('profile-info-cargo').textContent = usuarioEncontrado.cargo;
-                
-                const drawerAvatar = document.getElementById('drawer-avatar-img');
-                const drawerName = document.getElementById('drawer-name');
-                const drawerRole = document.getElementById('drawer-role');
-                if (drawerAvatar) drawerAvatar.src = document.getElementById('login-avatar')?.src || '';
-                if (drawerName) drawerName.textContent = usuarioEncontrado.nickname;
-                if (drawerRole) drawerRole.textContent = usuarioEncontrado.cargo;
-                
-                const avAvaliador = document.getElementById('av-avaliador');
-                if (avAvaliador) avAvaliador.value = usuarioEncontrado.nickname;
-                const sindicanteNick = document.getElementById('sindicante-nick');
-                if (sindicanteNick) sindicanteNick.value = usuarioEncontrado.nickname;
-                const ouvAutor = document.getElementById('ouv-autor');
-                if (ouvAutor) ouvAutor.value = usuarioEncontrado.nickname;
-                
-                const dataHoje = new Date().toLocaleDateString('pt-BR');
-                document.getElementById('av-data').value = dataHoje;
-                
-                usuariosOnline.add(usuarioEncontrado.nickname);
-                atualizarVisibilidadeAdmin();
-                carregarAtividades();
-                carregarNotificacoes();
-                carregarBloqueios();
-                carregarHorarios();
-                carregarSolicitacoesAdmin();
-                carregarMembros();
-                carregarLogs();
-                carregarDiasSelect();
-                carregarLinks();
-                iniciarAtualizacaoEmTempoReal();
-                mostrarToast('Bem-vindo', `Login realizado como ${usuarioEncontrado.nickname}`, 'success');
-            }, 3000);
+
+            usuarioEncontrado = usuario;
+
+            document.getElementById('login-overlay').classList.add('hidden');
+
+            const headerAvatar = document.getElementById('header-profile-avatar');
+            const headerName = document.getElementById('header-profile-name');
+            const headerRole = document.getElementById('header-profile-role');
+            if (headerAvatar) headerAvatar.src = avatarUrl;
+            if (headerName) headerName.textContent = usuario.nickname;
+            if (headerRole) headerRole.textContent = usuario.cargo || 'Membro';
+
+            const sidebarName = document.getElementById('profile-sidebar-name');
+            const sidebarImg = document.getElementById('profile-sidebar-img');
+            if (sidebarName) sidebarName.textContent = usuario.nickname;
+            if (sidebarImg) sidebarImg.src = avatarUrl;
+
+            const profileAvatar = document.getElementById('profile-avatar-img');
+            if (profileAvatar) profileAvatar.src = avatarUrl;
+
+            const drawerAvatar = document.getElementById('drawer-avatar-img');
+            const drawerName = document.getElementById('drawer-name');
+            const drawerRole = document.getElementById('drawer-role');
+            if (drawerAvatar) drawerAvatar.src = avatarUrl;
+            if (drawerName) drawerName.textContent = usuario.nickname;
+            if (drawerRole) drawerRole.textContent = usuario.cargo || 'Membro';
+
+            document.getElementById('profile-info-nick').textContent = usuario.nickname;
+            document.getElementById('profile-info-cargo-executivo').textContent = usuario.cargo_executivo || 'Não definido';
+            document.getElementById('profile-info-cargo').textContent = usuario.cargo || 'Membro';
+
+            const avAvaliador = document.getElementById('av-avaliador');
+            if (avAvaliador) avAvaliador.value = usuario.nickname;
+            const sindicanteNick = document.getElementById('sindicante-nick');
+            if (sindicanteNick) sindicanteNick.value = usuario.nickname;
+            const ouvAutor = document.getElementById('ouv-autor');
+            if (ouvAutor) ouvAutor.value = usuario.nickname;
+
+            const dataHoje = new Date().toLocaleDateString('pt-BR');
+            document.getElementById('av-data').value = dataHoje;
+
+            atualizarVisibilidadeAdmin();
+            carregarAtividades();
+            carregarNotificacoes();
+            carregarBloqueios();
+            carregarHorarios();
+            carregarSolicitacoesAdmin();
+            carregarMembros();
+            carregarLogs();
+            carregarDiasSelect();
+            carregarLinks();
+            iniciarAtualizacaoEmTempoReal();
+
+            const ultimaPagina = sessionStorage.getItem('ultimaPagina') || 'home';
+            switchPage(ultimaPagina);
+
+            mostrarToast('Bem-vindo', `Login realizado como ${usuario.nickname}`, 'success');
         }
 
         function iniciarAtualizacaoEmTempoReal() {
@@ -735,8 +708,6 @@
 
         async function verificarAtualizacoesEmTempoReal() {
             try {
-                const dadosAntigos = JSON.stringify(DADOS);
-                
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/dados_sistema?select=*`, {
                     headers: {
                         'apikey': SUPABASE_KEY,
@@ -749,64 +720,57 @@
                     const dadosArray = await response.json();
                     if (dadosArray && dadosArray.length > 0) {
                         const novosDados = dadosArray[0].conteudo;
-                        const novosDadosString = JSON.stringify(novosDados);
+
+                        const bloqueiosAntigos = { ...paginaBloqueada };
+                        const novosBloqueios = novosDados.bloqueios || [];
                         
-                        if (dadosAntigos !== novosDadosString) {
-                            const solicitacoesAntigas = DADOS.solicitacoes?.filter(s => s.status === 'pendente').length || 0;
+                        let novoEstadoColeta = false;
+                        let novoEstadoAvMensal = false;
+                        
+                        novosBloqueios.forEach(b => {
+                            if (b.pagina === 'coleta') novoEstadoColeta = b.bloqueado;
+                            if (b.pagina === 'av-mensal') novoEstadoAvMensal = b.bloqueado;
+                        });
+                        
+                        if (novoEstadoColeta !== bloqueiosAntigos.coleta) {
+                            paginaBloqueada.coleta = novoEstadoColeta;
+                            const nomePagina = 'Coleta de Horários';
+                            const acao = novoEstadoColeta ? 'fechada' : 'aberta';
+                            criarNotificacao('*', 'Atualização de página', `A página ${nomePagina} foi ${acao}.`, novoEstadoColeta ? 'warning' : 'success');
+                            atualizarBotoesToggle('coleta', novoEstadoColeta);
                             
-                            const novasAtividades = novosDados.atividades?.filter(a => {
-                                const antiga = DADOS.atividades?.find(oa => oa.id === a.id);
-                                return !antiga || (antiga.status !== 'concluido' && a.status === 'concluido');
-                            }).length > 0;
-
-                            DADOS = novosDados;
-                            
-                            carregarHorarios();
-                            carregarAtividades();
-                            carregarNotificacoes();
-                            carregarLinks();
-                            
-                            if (verificarPermissaoAdmin()) {
-                                carregarSolicitacoesAdmin();
-                                carregarMembros();
-                                carregarLogs();
-                            }
-                            
-                            const solicitacoesNovas = DADOS.solicitacoes?.filter(s => s.status === 'pendente').length || 0;
-                            if (solicitacoesNovas > solicitacoesAntigas && verificarPermissaoAdmin()) {
-                                mostrarToast('Nova solicitação', 'Uma nova solicitação de acesso foi recebida', 'info');
-                            }
-
-                            if (novasAtividades && usuarioEncontrado) {
-                                const ultimaAtividade = DADOS.atividades[DADOS.atividades.length - 1];
-                                if (ultimaAtividade && ultimaAtividade.criado_por !== usuarioEncontrado.nickname) {
-                                    mostrarToast('Nova atividade', `${ultimaAtividade.criado_por || 'Alguém'} acabou de marcar uma atividade. Confira!`, 'info');
-                                }
-                            }
-                            
-                            atualizarBadgeNotificacoes();
-                            
-                            const overlay = document.getElementById('login-overlay');
-                            if (overlay && !overlay.classList.contains('hidden') && usuarioEncontrado) {
-                                const usuarioAtual = DADOS.usuarios?.find(u => u.nickname === usuarioEncontrado.nickname);
-                                if (usuarioAtual && usuarioAtual.status === 'aprovado' && usuarioEncontrado.status !== 'aprovado') {
-                                    mostrarToast('Acesso aprovado!', 'Seu acesso foi aprovado. Redirecionando...', 'success');
-                                    setTimeout(() => {
-                                        confirmarLogin();
-                                    }, 3000);
-                                } else if (usuarioAtual && usuarioAtual.status === 'rejeitado' && usuarioEncontrado.status !== 'rejeitado') {
-                                    const solicitacao = DADOS.solicitacoes?.find(s => s.nickname === usuarioEncontrado.nickname && s.status === 'rejeitada');
-                                    const justificativa = solicitacao?.justificativa || 'não informado';
-                                    mostrarMensagem('error', `Acesso negado. Motivo: ${justificativa}. Aguarde 3s...`);
-                                    setTimeout(() => {
-                                        location.reload();
-                                    }, 3000);
-                                }
-                            }
-
                             const pageAtual = document.querySelector('.page.active')?.id;
-                            if (pageAtual) verificarBloqueioPagina(pageAtual.replace('page-', ''));
+                            if (pageAtual && pageAtual === 'page-coleta-horarios') {
+                                verificarBloqueioPagina('coleta-horarios');
+                            }
                         }
+                        
+                        if (novoEstadoAvMensal !== bloqueiosAntigos.avMensal) {
+                            paginaBloqueada.avMensal = novoEstadoAvMensal;
+                            const nomePagina = 'Formulário';
+                            const acao = novoEstadoAvMensal ? 'fechado' : 'aberto';
+                            criarNotificacao('*', 'Atualização de página', `O ${nomePagina} foi ${acao}.`, novoEstadoAvMensal ? 'warning' : 'success');
+                            atualizarBotoesToggle('av-mensal', novoEstadoAvMensal);
+                            
+                            const pageAtual = document.querySelector('.page.active')?.id;
+                            if (pageAtual && pageAtual === 'page-form-av-mensal') {
+                                verificarBloqueioPagina('form-av-mensal');
+                            }
+                        }
+
+                        DADOS = novosDados;
+                        carregarHorarios();
+                        carregarAtividades();
+                        carregarNotificacoes();
+                        carregarLinks();
+                        
+                        if (verificarPermissaoAdmin()) {
+                            carregarSolicitacoesAdmin();
+                            carregarMembros();
+                            carregarLogs();
+                        }
+                        
+                        atualizarBadgeNotificacoes();
                     }
                 }
             } catch (error) {
@@ -814,116 +778,82 @@
             }
         }
 
-        async function carregarBloqueios() {
-            const bloqueios = DADOS.bloqueios || [];
-            paginaBloqueada.coleta = false;
-            paginaBloqueada.avMensal = false;
-            bloqueiosPendentes.coleta = false;
-            bloqueiosPendentes.avMensal = false;
-            
-            bloqueios.forEach(b => {
-                if (b.pagina === 'coleta') {
-                    paginaBloqueada.coleta = b.bloqueado;
-                    bloqueiosPendentes.coleta = b.bloqueado;
-                } else if (b.pagina === 'av-mensal') {
-                    paginaBloqueada.avMensal = b.bloqueado;
-                    bloqueiosPendentes.avMensal = b.bloqueado;
+        function atualizarBotoesToggle(pagina, bloqueado) {
+            if (pagina === 'coleta') {
+                const btnAberto = document.getElementById('btn-coleta-aberto');
+                const btnFechado = document.getElementById('btn-coleta-fechado');
+                if (btnAberto && btnFechado) {
+                    btnAberto.classList.toggle('active', !bloqueado);
+                    btnFechado.classList.toggle('active', bloqueado);
                 }
-            });
-            atualizarCheckboxes();
-        }
-
-        function atualizarCheckboxes() {
-            const coletaCheck = document.getElementById('checkbox-coleta');
-            const avCheck = document.getElementById('checkbox-av-mensal');
-            
-            if (coletaCheck) {
-                if (bloqueiosPendentes.coleta) {
-                    coletaCheck.classList.add('checked');
-                } else {
-                    coletaCheck.classList.remove('checked');
-                }
-            }
-            
-            if (avCheck) {
-                if (bloqueiosPendentes.avMensal) {
-                    avCheck.classList.add('checked');
-                } else {
-                    avCheck.classList.remove('checked');
+            } else if (pagina === 'av-mensal') {
+                const btnAberto = document.getElementById('btn-av-aberto');
+                const btnFechado = document.getElementById('btn-av-fechado');
+                if (btnAberto && btnFechado) {
+                    btnAberto.classList.toggle('active', !bloqueado);
+                    btnFechado.classList.toggle('active', bloqueado);
                 }
             }
         }
 
-        function toggleCheckbox(pagina) {
+        async function togglePagina(pagina, aberto) {
             if (!verificarPermissaoAdmin()) {
                 mostrarToast('Acesso negado', 'Apenas administradores podem alterar isso', 'error');
                 return;
             }
             
-            if (pagina === 'coleta') {
-                bloqueiosPendentes.coleta = !bloqueiosPendentes.coleta;
-            } else if (pagina === 'av-mensal') {
-                bloqueiosPendentes.avMensal = !bloqueiosPendentes.avMensal;
-            }
-            atualizarCheckboxes();
-        }
-
-        async function salvarBloqueios() {
-            if (!verificarPermissaoAdmin()) return;
+            const bloqueado = !aberto;
             
             if (!DADOS.bloqueios) DADOS.bloqueios = [];
             
-            const indexColeta = DADOS.bloqueios.findIndex(b => b.pagina === 'coleta');
-            if (indexColeta !== -1) {
-                DADOS.bloqueios[indexColeta].bloqueado = bloqueiosPendentes.coleta;
-                DADOS.bloqueios[indexColeta].atualizado_em = new Date().toISOString();
+            const index = DADOS.bloqueios.findIndex(b => b.pagina === pagina);
+            if (index !== -1) {
+                DADOS.bloqueios[index].bloqueado = bloqueado;
+                DADOS.bloqueios[index].atualizado_em = new Date().toISOString();
             } else {
                 DADOS.bloqueios.push({
-                    pagina: 'coleta',
-                    bloqueado: bloqueiosPendentes.coleta,
+                    pagina: pagina,
+                    bloqueado: bloqueado,
                     atualizado_em: new Date().toISOString()
                 });
             }
             
-            const indexAv = DADOS.bloqueios.findIndex(b => b.pagina === 'av-mensal');
-            if (indexAv !== -1) {
-                DADOS.bloqueios[indexAv].bloqueado = bloqueiosPendentes.avMensal;
-                DADOS.bloqueios[indexAv].atualizado_em = new Date().toISOString();
-            } else {
-                DADOS.bloqueios.push({
-                    pagina: 'av-mensal',
-                    bloqueado: bloqueiosPendentes.avMensal,
-                    atualizado_em: new Date().toISOString()
-                });
-            }
+            paginaBloqueada[pagina] = bloqueado;
             
-            const coletaAlterada = paginaBloqueada.coleta !== bloqueiosPendentes.coleta;
-            const avAlterada = paginaBloqueada.avMensal !== bloqueiosPendentes.avMensal;
-            
-            paginaBloqueada.coleta = bloqueiosPendentes.coleta;
-            paginaBloqueada.avMensal = bloqueiosPendentes.avMensal;
-            
-            await registrarLog('pagina', 'bloqueios_atualizados', usuarioEncontrado.nickname, { 
-                coleta: bloqueiosPendentes.coleta ? 'bloqueado' : 'liberado',
-                avMensal: bloqueiosPendentes.avMensal ? 'bloqueado' : 'liberado'
+            await registrarLog('pagina', 'bloqueio_atualizado', usuarioEncontrado.nickname, { 
+                pagina: pagina,
+                status: bloqueado ? 'bloqueado' : 'liberado'
             });
-            
-            if (coletaAlterada) {
-                const mensagem = bloqueiosPendentes.coleta ? 'Página de coleta foi fechada.' : 'Página de coleta foi liberada.';
-                await criarNotificacao('*', 'Atualização de página', mensagem, 'warning');
-            }
-            
-            if (avAlterada) {
-                const mensagem = bloqueiosPendentes.avMensal ? 'O formulário foi fechado.' : 'O formulário foi fechado.';
-                await criarNotificacao('*', 'Atualização de página', mensagem, 'warning');
-            }
             
             await salvarDados();
             
             const pageAtual = document.querySelector('.page.active')?.id;
-            if (pageAtual) verificarBloqueioPagina(pageAtual.replace('page-', ''));
+            if (pageAtual && pageAtual === `page-${pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal'}`) {
+                verificarBloqueioPagina(pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal');
+            }
+
+            const nomePagina = pagina === 'coleta' ? 'Coleta de Horários' : 'Formulário';
+            const acao = bloqueado ? 'fechada' : 'aberta';
+            criarNotificacao('*', 'Atualização de página', `A página ${nomePagina} foi ${acao}.`, bloqueado ? 'warning' : 'success');
             
-            mostrarToast('Preferências salvas', 'As páginas foram atualizadas', 'success');
+            atualizarBotoesToggle(pagina, bloqueado);
+        }
+
+        async function carregarBloqueios() {
+            const bloqueios = DADOS.bloqueios || [];
+            paginaBloqueada.coleta = false;
+            paginaBloqueada.avMensal = false;
+            
+            bloqueios.forEach(b => {
+                if (b.pagina === 'coleta') {
+                    paginaBloqueada.coleta = b.bloqueado;
+                } else if (b.pagina === 'av-mensal') {
+                    paginaBloqueada.avMensal = b.bloqueado;
+                }
+            });
+            
+            atualizarBotoesToggle('coleta', paginaBloqueada.coleta);
+            atualizarBotoesToggle('av-mensal', paginaBloqueada.avMensal);
         }
 
         function mostrarMensagem(tipo, texto) {
@@ -982,13 +912,15 @@
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             const page = document.getElementById(`page-${pageId}`);
             if (page) page.classList.add('active');
+
+            sessionStorage.setItem('ultimaPagina', pageId);
             
             document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
             const menuItem = Array.from(document.querySelectorAll('.menu-item')).find(item => item.textContent.trim() === 
                 (pageId === 'home' ? 'Home' : 
-                 pageId === 'atividades' ? 'Atividades' :
-                 pageId === 'ouvidoria' ? 'Ouvidoria' :
-                 pageId === 'admin' ? 'Painel' : ''));
+                pageId === 'atividades' ? 'Atividades' :
+                pageId === 'ouvidoria' ? 'Ouvidoria' :
+                pageId === 'admin' ? 'Painel' : ''));
             if (menuItem) menuItem.classList.add('active');
             
             const titles = {
@@ -1391,8 +1323,8 @@
                     DADOS.notificacoes[index].lida = true;
                     DADOS.notificacoes[index].data_leitura = new Date().toISOString();
                     await salvarDados();
-                    await registrarLog('notificacao', 'marcar_lida', usuarioEncontrado.nickname, { notificacao_id: notifId });
                     carregarNotificacoes();
+                    renderNotificacoesFullscreen();
                 }
             } catch (error) {
                 console.error('Erro ao marcar notificação como lida:', error);
@@ -1405,14 +1337,11 @@
                 
                 if (!DADOS.notificacoes) return;
                 
-                const notificacoesAntigas = DADOS.notificacoes.length;
                 DADOS.notificacoes = DADOS.notificacoes.filter(n => n.id !== notifId);
                 
-                if (DADOS.notificacoes.length === notificacoesAntigas) return;
-                
                 await salvarDados();
-                await registrarLog('notificacao', 'delecao_notificacao', usuarioEncontrado?.nickname || 'Sistema', { notificacao_id: notifId });
                 carregarNotificacoes();
+                renderNotificacoesFullscreen();
                 
                 mostrarToast('Apagada', 'Mensagem excluída com sucesso', 'success');
             } catch (error) {
@@ -1421,21 +1350,31 @@
         }
 
         async function marcarTodasLidas() {
-            if (DADOS.notificacoes) {
-                let mudou = false;
-                DADOS.notificacoes.forEach(n => {
-                    if (!n.lida && n.usuario_nick === usuarioEncontrado?.nickname) {
-                        n.lida = true;
-                        n.data_leitura = new Date().toISOString();
-                        mudou = true;
-                    }
-                });
-                if (mudou) {
-                    await salvarDados();
-                    await registrarLog('notificacao', 'marcar_todas_lidas', usuarioEncontrado.nickname);
-                    carregarNotificacoes();
-                    mostrarToast('Notificações', 'Todas as notificações foram marcadas como lidas', 'success');
+            if (!DADOS.notificacoes || !usuarioEncontrado) return;
+            
+            let mudou = false;
+            const notificacoesUsuario = DADOS.notificacoes.filter(n => n.usuario_nick === usuarioEncontrado.nickname);
+            const naoLidas = notificacoesUsuario.filter(n => !n.lida);
+            
+            if (naoLidas.length === 0) {
+                mostrarToast('Sem notificações', 'Não há mensagens não lidas', 'info');
+                return;
+            }
+            
+            DADOS.notificacoes.forEach(n => {
+                if (!n.lida && n.usuario_nick === usuarioEncontrado.nickname) {
+                    n.lida = true;
+                    n.data_leitura = new Date().toISOString();
+                    mudou = true;
                 }
+            });
+            
+            if (mudou) {
+                await salvarDados();
+                await registrarLog('notificacao', 'marcar_todas_lidas', usuarioEncontrado.nickname);
+                carregarNotificacoes();
+                renderNotificacoesFullscreen();
+                mostrarToast('Sucesso', `${naoLidas.length} notificação(ões) marcada(s) como lida(s)`, 'success');
             }
         }
 
@@ -1461,7 +1400,6 @@
                             <div class="membro-checkbox">
                                 <div id="checkbox-${m.nickname}" class="checkbox-membro" onclick="toggleMembroSelecionado('${m.nickname}', this)"></div>
                             </div>
-                            <span class="online-indicator ${usuariosOnline.has(m.nickname) ? 'online' : 'offline'}"></span>
                             <span style="font-weight: 600;">${m.nickname}</span>
                             <span class="membro-cargo-badge ${cargoAtual === 'Admin' ? 'admin' : cargoAtual === 'DEV' ? 'dev' : 'membro'}">${cargoAtual || 'Membro'}</span>
                         </div>
@@ -1508,30 +1446,7 @@
             select.innerHTML = options;
         }
 
-        function atualizarStatusAtividades() {
-            const agora = new Date();
-            (DADOS.atividades || []).forEach(a => {
-                if (a.status !== 'concluido') {
-                    const [ano, mes, dia] = a.data.split('-').map(Number);
-                    const [hora, minuto] = a.hora.split(':').map(Number);
-                    const dataAtividade = new Date(ano, mes - 1, dia, hora, minuto, 0);
-                    
-                    if (agora >= dataAtividade) {
-                        if (agora.getTime() - dataAtividade.getTime() < 3600000) {
-                            a.status = 'em_andamento';
-                        } else {
-                            a.status = 'pendente';
-                        }
-                    } else {
-                        a.status = 'pendente';
-                    }
-                }
-            });
-        }
-
         async function carregarAtividades() {
-            atualizarStatusAtividades();
-            
             const atividades = DADOS.atividades || [];
             
             const titulo = document.getElementById('calendario-titulo');
@@ -1664,7 +1579,10 @@
         }
 
         async function concluirAtividade(id) {
-            if (!verificarPermissaoAdmin()) return;
+            if (!verificarPermissaoAdmin()) {
+                mostrarToast('Acesso negado', 'Apenas administradores podem concluir atividades', 'error');
+                return;
+            }
             
             const index = DADOS.atividades?.findIndex(a => a.id == id);
             if (index !== -1) {
@@ -1756,9 +1674,6 @@
             } else {
                 const dropdown = document.getElementById('notif-dropdown');
                 dropdown.classList.toggle('show');
-                if (notificacoesNaoLidas === 0) {
-                    mostrarToast('Sem notificações', 'Você não possui mensagens não lidas', 'info');
-                }
             }
         }
 
@@ -1786,37 +1701,23 @@
             }
             
             container.innerHTML = notificacoes.map(n => {
-                const notifId = String(n.id).replace(/\./g, '_');
-                
                 return `
                     <div class="notif-fullscreen-item ${!n.lida ? 'unread' : ''}" 
-                        id="notif-item-${notifId}" 
-                        onclick="marcarNotificacaoLidaFullscreen('${n.id}')"
-                        style="position: relative; cursor: pointer;">
+                        style="position: relative;">
                         <div class="notif-fullscreen-titulo">${n.titulo}</div>
                         <div class="notif-fullscreen-texto">${n.mensagem}</div>
                         <div class="notif-fullscreen-data">${new Date(n.data_criacao).toLocaleString('pt-BR')}</div>
-                        <div class="notif-fullscreen-delete" onclick="event.stopPropagation(); deletarNotificacaoFullscreen('${n.id}')">
+                        <div class="notif-fullscreen-delete" onclick="event.stopPropagation(); deletarNotificacao('${n.id}')">
                             <i class="ph ph-trash"></i>
                         </div>
+                        ${!n.lida ? `<div style="position: absolute; top: 15px; right: 45px; color: #85e300; font-size: 10px;">NOVA</div>` : ''}
                     </div>
                 `;
             }).join('');
         }
 
-       async function marcarNotificacaoLidaFullscreen(id) {
-            await marcarNotificacaoLida(id);
-            renderNotificacoesFullscreen();
-            carregarNotificacoes();
-        }
-
         async function marcarTodasLidasMobile() {
             await marcarTodasLidas();
-            renderNotificacoesFullscreen();
-        }
-
-        async function deletarNotificacaoFullscreen(id) {
-            await deletarNotificacao(id);
             renderNotificacoesFullscreen();
         }
 
@@ -1830,11 +1731,11 @@
             }
             
             list.innerHTML = notificacoes.sort((a, b) => new Date(b.data_criacao) - new Date(a.data_criacao)).map(n => `
-                <div class="notif-item ${!n.lida ? 'unread' : ''}" onclick="marcarNotificacaoLida(${n.id})">
+                <div class="notif-item ${!n.lida ? 'unread' : ''}" onclick="marcarNotificacaoLida('${n.id}')">
                     <div class="notif-titulo">${n.titulo}</div>
                     <div class="notif-texto">${n.mensagem}</div>
                     <div class="notif-data">${new Date(n.data_criacao).toLocaleString('pt-BR')}</div>
-                    <div class="notif-delete" onclick="event.stopPropagation(); deletarNotificacao(${n.id})"><i class="ph ph-trash"></i></div>
+                    <div class="notif-delete" onclick="event.stopPropagation(); deletarNotificacao('${n.id}')"><i class="ph ph-trash"></i></div>
                 </div>
             `).join('');
         }
@@ -2010,11 +1911,157 @@
             mostrarToast('Link removido', 'O link foi removido com sucesso', 'success');
         }
 
+        async function enviarSolicitacao() {
+            const nick = document.getElementById('solicitacao-nick')?.textContent;
+            const motivo = document.getElementById('motivo-solicitacao')?.value || '';
+            
+            if (!nick) return;
+            
+            const usuarioIndex = DADOS.usuarios?.findIndex(u => u.nickname === nick);
+            if (usuarioIndex !== -1) {
+                DADOS.usuarios[usuarioIndex].status = 'pendente';
+            } else {
+                if (!DADOS.usuarios) DADOS.usuarios = [];
+                DADOS.usuarios.push({
+                    nickname: nick,
+                    cargo: 'Membro',
+                    status: 'pendente',
+                    data_registro: new Date().toISOString()
+                });
+            }
+            
+            if (!DADOS.solicitacoes) DADOS.solicitacoes = [];
+            DADOS.solicitacoes.push({
+                id: Date.now() + Math.random(),
+                nickname: nick,
+                motivo: motivo,
+                status: 'pendente',
+                data_solicitacao: new Date().toISOString()
+            });
+            
+            await salvarDados();
+            
+            document.getElementById('btn-solicitar').disabled = true;
+            document.getElementById('btn-solicitar').textContent = 'Aguardando aprovação';
+            document.getElementById('mensagem-aguarde').style.display = 'block';
+            mostrarMensagem('info', 'Solicitação enviada. Aguarde aprovação.');
+            
+            mostrarToast('Solicitação enviada', 'Sua solicitação de acesso foi registrada', 'success');
+        }
+
+        async function confirmarLogin() {
+            if (!usuarioEncontrado) return;
+            
+            if (!verificarUsuarioAutorizado(usuarioEncontrado.nickname)) {
+                mostrarToast('Acesso negado', 'Usuário não autorizado', 'error');
+                setTimeout(() => location.reload(), 2000);
+                return;
+            }
+            
+            const cargoSelect = document.getElementById('login-cargo-executivo');
+            const isPrimeiroLogin = cargoSelect.style.display !== 'none';
+            
+            let cargoExecutivo = usuarioEncontrado.cargo_executivo;
+            
+            if (isPrimeiroLogin) {
+                cargoExecutivo = cargoSelect.value;
+                if (!cargoExecutivo) {
+                    mostrarMensagem('error', 'Selecione seu cargo executivo');
+                    return;
+                }
+            }
+            
+            const index = DADOS.usuarios.findIndex(u => u.nickname === usuarioEncontrado.nickname);
+            if (index !== -1) {
+                DADOS.usuarios[index].cargo_executivo = cargoExecutivo;
+                DADOS.usuarios[index].cargo_executivo_alterado = false;
+                DADOS.usuarios[index].primeiro_login = false;
+                usuarioEncontrado.cargo_executivo = cargoExecutivo;
+            }
+
+            const ultimaPagina = sessionStorage.getItem('ultimaPagina') || 'home';
+            
+            sessionStorage.setItem('usuario', JSON.stringify({
+                nickname: usuarioEncontrado.nickname,
+                cargo: usuarioEncontrado.cargo,
+                cargo_executivo: cargoExecutivo,
+                cargo_executivo_alterado: false,
+                primeiro_login: false,
+                avatar: document.getElementById('login-avatar')?.src || '',
+                ultimaPagina: ultimaPagina
+            }));
+            
+            await registrarLog('login', 'login', usuarioEncontrado.nickname, { cargo: usuarioEncontrado.cargo, cargo_executivo: cargoExecutivo });
+            
+            mostrarToast('Acesso liberado!', 'Redirecionando em 3 segundos...', 'success');
+            
+            setTimeout(() => {
+                document.getElementById('login-overlay').classList.add('hidden');
+                
+                const headerAvatar = document.getElementById('header-profile-avatar');
+                const headerName = document.getElementById('header-profile-name');
+                const headerRole = document.getElementById('header-profile-role');
+                if (headerAvatar) headerAvatar.src = document.getElementById('login-avatar')?.src || '';
+                if (headerName) headerName.textContent = usuarioEncontrado.nickname;
+                if (headerRole) headerRole.textContent = usuarioEncontrado.cargo;
+                
+                const sidebarName = document.getElementById('profile-sidebar-name');
+                const sidebarImg = document.getElementById('profile-sidebar-img');
+                if (sidebarName) sidebarName.textContent = usuarioEncontrado.nickname;
+                if (sidebarImg) sidebarImg.src = document.getElementById('login-avatar')?.src || '';
+                
+                const profileAvatar = document.getElementById('profile-avatar-img');
+                if (profileAvatar) profileAvatar.src = document.getElementById('login-avatar')?.src || '';
+                
+                document.getElementById('profile-info-nick').textContent = usuarioEncontrado.nickname;
+                document.getElementById('profile-info-cargo-executivo').textContent = cargoExecutivo;
+                document.getElementById('profile-info-cargo').textContent = usuarioEncontrado.cargo;
+                
+                const drawerAvatar = document.getElementById('drawer-avatar-img');
+                const drawerName = document.getElementById('drawer-name');
+                const drawerRole = document.getElementById('drawer-role');
+                if (drawerAvatar) drawerAvatar.src = document.getElementById('login-avatar')?.src || '';
+                if (drawerName) drawerName.textContent = usuarioEncontrado.nickname;
+                if (drawerRole) drawerRole.textContent = usuarioEncontrado.cargo;
+                
+                const avAvaliador = document.getElementById('av-avaliador');
+                if (avAvaliador) avAvaliador.value = usuarioEncontrado.nickname;
+                const sindicanteNick = document.getElementById('sindicante-nick');
+                if (sindicanteNick) sindicanteNick.value = usuarioEncontrado.nickname;
+                const ouvAutor = document.getElementById('ouv-autor');
+                if (ouvAutor) ouvAutor.value = usuarioEncontrado.nickname;
+                
+                const dataHoje = new Date().toLocaleDateString('pt-BR');
+                document.getElementById('av-data').value = dataHoje;
+                
+                atualizarVisibilidadeAdmin();
+                carregarAtividades();
+                carregarNotificacoes();
+                carregarBloqueios();
+                carregarHorarios();
+                carregarSolicitacoesAdmin();
+                carregarMembros();
+                carregarLogs();
+                carregarDiasSelect();
+                carregarLinks();
+                iniciarAtualizacaoEmTempoReal();
+
+                switchPage(ultimaPagina);
+                
+                mostrarToast('Bem-vindo', `Login realizado como ${usuarioEncontrado.nickname}`, 'success');
+            }, 3000);
+        }
+
         function init() {
             const usuarioSalvo = sessionStorage.getItem('usuario');
             if (usuarioSalvo) {
                 try {
                     const userData = JSON.parse(usuarioSalvo);
+                    
+                    if (!verificarUsuarioAutorizado(userData.nickname)) {
+                        sessionStorage.removeItem('usuario');
+                        return;
+                    }
                     
                     const headerAvatar = document.getElementById('header-profile-avatar');
                     const headerName = document.getElementById('header-profile-name');
@@ -2028,18 +2075,7 @@
                     if (sidebarName) sidebarName.textContent = userData.nickname || '';
                     if (sidebarImg) sidebarImg.src = userData.avatar || '';
                     
-                    const profileNick = document.getElementById('profile-nickname');
-                    const profileCargoExecutivo = document.getElementById('profile-cargo-executivo');
-                    const profileCargoTag = document.getElementById('profile-cargo-tag');
                     const profileAvatar = document.getElementById('profile-avatar-img');
-                    if (profileNick) profileNick.textContent = userData.nickname || '';
-                    if (profileCargoExecutivo) profileCargoExecutivo.textContent = userData.cargo_executivo || '';
-                    if (profileCargoTag) {
-                        if (userData.cargo === 'Admin') profileCargoTag.textContent = 'ADMIN';
-                        else if (userData.cargo === 'DEV') profileCargoTag.textContent = 'DEV';
-                        else if (userData.cargo === 'Membro') profileCargoTag.textContent = 'MEMBRO';
-                        else profileCargoTag.style.display = 'none';
-                    }
                     if (profileAvatar) profileAvatar.src = userData.avatar || '';
                     
                     const drawerAvatar = document.getElementById('drawer-avatar-img');
@@ -2072,7 +2108,6 @@
                     document.getElementById('profile-info-cargo-executivo').textContent = userData.cargo_executivo || 'Não definido';
                     document.getElementById('profile-info-cargo').textContent = userData.cargo;
                     
-                    usuariosOnline.add(userData.nickname);
                     atualizarVisibilidadeAdmin();
                     carregarDados().then(() => {
                         carregarNotificacoes();
@@ -2088,6 +2123,9 @@
                         preencherCheckboxes();
                         carregarDiasSelect();
                         iniciarAtualizacaoEmTempoReal();
+
+                        const ultimaPagina = userData.ultimaPagina || sessionStorage.getItem('ultimaPagina') || 'home';
+                        switchPage(ultimaPagina);
                     });
                 } catch (e) {
                     console.error('Erro ao carregar usuário salvo:', e);
