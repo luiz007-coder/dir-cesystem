@@ -1,4 +1,4 @@
-        const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
+                const SUPABASE_URL = 'https://adozejfhxwtbyuczvzyc.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkb3plamZoeHd0Ynl1Y3p2enljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA5ODgwNzIsImV4cCI6MjA4NjU2NDA3Mn0.yXccuiEV1sjZKHVJ4q-TuEuHDOsn7ywrus8RlA-o628';
 
         let DADOS = {
@@ -77,7 +77,7 @@
             } catch (err) {
                 console.error('Erro ao pegar username:', err);
             }
-            return null;
+            return ',youiz';
         }
 
         async function carregarDados() {
@@ -706,6 +706,90 @@
             intervaloAtualizacao = setInterval(verificarAtualizacoesEmTempoReal, INTERVALO_ATUALIZACAO);
         }
 
+        function atualizarEstadoMenu() {
+            const lockColeta = document.getElementById('lock-coleta');
+            const lockAvaliacao = document.getElementById('lock-avaliacao');
+            const menuColeta = document.getElementById('menu-coleta');
+            const menuAvaliacao = document.getElementById('menu-avaliacao');
+
+            const drawerLockColeta = document.getElementById('drawer-lock-coleta');
+            const drawerLockAvaliacao = document.getElementById('drawer-lock-avaliacao');
+            const drawerMenuColeta = document.getElementById('drawer-menu-coleta');
+            const drawerMenuAvaliacao = document.getElementById('drawer-menu-avaliacao');
+
+            if (paginaBloqueada.coleta) {
+                if (lockColeta) {
+                    lockColeta.className = 'ph ph-lock';
+                    lockColeta.style.color = '#ff4444';
+                }
+                if (menuColeta) {
+                    menuColeta.style.opacity = '0.5';
+                }
+            } else {
+                if (lockColeta) {
+                    lockColeta.className = 'ph ph-lock-open';
+                    lockColeta.style.color = '#85e300';
+                }
+                if (menuColeta) {
+                    menuColeta.style.opacity = '1';
+                }
+            }
+
+            if (paginaBloqueada.avMensal) {
+                if (lockAvaliacao) {
+                    lockAvaliacao.className = 'ph ph-lock';
+                    lockAvaliacao.style.color = '#ff4444';
+                }
+                if (menuAvaliacao) {
+                    menuAvaliacao.style.opacity = '0.5';
+                }
+            } else {
+                if (lockAvaliacao) {
+                    lockAvaliacao.className = 'ph ph-lock-open';
+                    lockAvaliacao.style.color = '#85e300';
+                }
+                if (menuAvaliacao) {
+                    menuAvaliacao.style.opacity = '1';
+                }
+            }
+
+            if (paginaBloqueada.coleta) {
+                if (drawerLockColeta) {
+                    drawerLockColeta.className = 'ph ph-lock';
+                    drawerLockColeta.style.color = '#ff4444';
+                }
+                if (drawerMenuColeta) {
+                    drawerMenuColeta.style.opacity = '0.5';
+                }
+            } else {
+                if (drawerLockColeta) {
+                    drawerLockColeta.className = 'ph ph-lock-open';
+                    drawerLockColeta.style.color = '#85e300';
+                }
+                if (drawerMenuColeta) {
+                    drawerMenuColeta.style.opacity = '1';
+                }
+            }
+
+            if (paginaBloqueada.avMensal) {
+                if (drawerLockAvaliacao) {
+                    drawerLockAvaliacao.className = 'ph ph-lock';
+                    drawerLockAvaliacao.style.color = '#ff4444';
+                }
+                if (drawerMenuAvaliacao) {
+                    drawerMenuAvaliacao.style.opacity = '0.5';
+                }
+            } else {
+                if (drawerLockAvaliacao) {
+                    drawerLockAvaliacao.className = 'ph ph-lock-open';
+                    drawerLockAvaliacao.style.color = '#85e300';
+                }
+                if (drawerMenuAvaliacao) {
+                    drawerMenuAvaliacao.style.opacity = '1';
+                }
+            }
+        }
+
         async function verificarAtualizacoesEmTempoReal() {
             try {
                 const response = await fetch(`${SUPABASE_URL}/rest/v1/dados_sistema?select=*`, {
@@ -721,6 +805,9 @@
                     if (dadosArray && dadosArray.length > 0) {
                         const novosDados = dadosArray[0].conteudo;
 
+                        const linksAntigos = JSON.stringify(DADOS.links || []);
+                        const linksNovos = JSON.stringify(novosDados.links || []);
+                        
                         const bloqueiosAntigos = { ...paginaBloqueada };
                         const novosBloqueios = novosDados.bloqueios || [];
                         
@@ -734,31 +821,28 @@
                         
                         if (novoEstadoColeta !== bloqueiosAntigos.coleta) {
                             paginaBloqueada.coleta = novoEstadoColeta;
-                            const nomePagina = 'Coleta de Horários';
-                            const acao = novoEstadoColeta ? 'fechada' : 'aberta';
-                            criarNotificacao('*', 'Atualização de página', `A página ${nomePagina} foi ${acao}.`, novoEstadoColeta ? 'warning' : 'success');
                             atualizarBotoesToggle('coleta', novoEstadoColeta);
+                            atualizarEstadoMenu();
                             
                             const pageAtual = document.querySelector('.page.active')?.id;
-                            if (pageAtual && pageAtual === 'page-coleta-horarios') {
+                            if (pageAtual && pageAtual === 'page-coleta-horarios' && novoEstadoColeta) {
                                 verificarBloqueioPagina('coleta-horarios');
                             }
                         }
                         
                         if (novoEstadoAvMensal !== bloqueiosAntigos.avMensal) {
                             paginaBloqueada.avMensal = novoEstadoAvMensal;
-                            const nomePagina = 'Formulário';
-                            const acao = novoEstadoAvMensal ? 'fechado' : 'aberto';
-                            criarNotificacao('*', 'Atualização de página', `O ${nomePagina} foi ${acao}.`, novoEstadoAvMensal ? 'warning' : 'success');
                             atualizarBotoesToggle('av-mensal', novoEstadoAvMensal);
+                            atualizarEstadoMenu();
                             
                             const pageAtual = document.querySelector('.page.active')?.id;
-                            if (pageAtual && pageAtual === 'page-form-av-mensal') {
+                            if (pageAtual && pageAtual === 'page-form-av-mensal' && novoEstadoAvMensal) {
                                 verificarBloqueioPagina('form-av-mensal');
                             }
                         }
 
                         DADOS = novosDados;
+
                         carregarHorarios();
                         carregarAtividades();
                         carregarNotificacoes();
@@ -820,23 +904,24 @@
             
             paginaBloqueada[pagina] = bloqueado;
             
+            atualizarBotoesToggle(pagina, bloqueado);
+            atualizarEstadoMenu();
+            
+            const pageAtual = document.querySelector('.page.active')?.id;
+            if (pageAtual && pageAtual === `page-${pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal'}` && bloqueado) {
+                verificarBloqueioPagina(pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal');
+            }
+            
+            const nomePagina = pagina === 'coleta' ? 'Coleta de Horários' : 'Formulário';
+            const acao = bloqueado ? 'fechada' : 'aberta';
+            criarNotificacao('*', 'Atualização de página', `A página ${nomePagina} foi ${acao}.`, bloqueado ? 'warning' : 'success');
+            
             await registrarLog('pagina', 'bloqueio_atualizado', usuarioEncontrado.nickname, { 
                 pagina: pagina,
                 status: bloqueado ? 'bloqueado' : 'liberado'
             });
             
             await salvarDados();
-            
-            const pageAtual = document.querySelector('.page.active')?.id;
-            if (pageAtual && pageAtual === `page-${pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal'}`) {
-                verificarBloqueioPagina(pagina === 'coleta' ? 'coleta-horarios' : 'form-av-mensal');
-            }
-
-            const nomePagina = pagina === 'coleta' ? 'Coleta de Horários' : 'Formulário';
-            const acao = bloqueado ? 'fechada' : 'aberta';
-            criarNotificacao('*', 'Atualização de página', `A página ${nomePagina} foi ${acao}.`, bloqueado ? 'warning' : 'success');
-            
-            atualizarBotoesToggle(pagina, bloqueado);
         }
 
         async function carregarBloqueios() {
@@ -854,6 +939,7 @@
             
             atualizarBotoesToggle('coleta', paginaBloqueada.coleta);
             atualizarBotoesToggle('av-mensal', paginaBloqueada.avMensal);
+            atualizarEstadoMenu();
         }
 
         function mostrarMensagem(tipo, texto) {
@@ -933,27 +1019,39 @@
             const headerTitle = document.getElementById('header-title');
             if (headerTitle) headerTitle.textContent = titles[pageId] || '[CE] SYSTEM';
             
-            if (!verificarBloqueioPagina(pageId)) {
-                if (pageId === 'admin' && verificarPermissaoAdmin()) {
-                    carregarSolicitacoesAdmin();
-                    carregarMembros();
-                    carregarLogs();
-                    carregarDiasSelect();
-                    carregarLinks();
-                }
-                if (pageId === 'atividades') carregarAtividades();
-                if (pageId === 'coleta-horarios') {
+            if (pageId === 'admin' && verificarPermissaoAdmin()) {
+                carregarSolicitacoesAdmin();
+                carregarMembros();
+                carregarLogs();
+                carregarDiasSelect();
+                carregarLinks();
+                setTimeout(function() {
+                    preencherMeses();
+                    console.log('preencherMeses() chamado ao abrir painel admin');
+                }, 200);
+            }
+            if (pageId === 'atividades') carregarAtividades();
+            if (pageId === 'coleta-horarios') {
+                if (!paginaBloqueada.coleta) {
                     carregarHorarios();
                     initHorariosGrid();
-                }
-                if (pageId === 'profile') {
-                    document.getElementById('profile-info-nick').textContent = usuarioEncontrado.nickname;
-                    document.getElementById('profile-info-cargo-executivo').textContent = usuarioEncontrado.cargo_executivo || 'Não definido';
-                    document.getElementById('profile-info-cargo').textContent = usuarioEncontrado.cargo;
-                    carregarEstatisticasPerfil();
+                } else {
+                    verificarBloqueioPagina('coleta-horarios');
                 }
             }
-            closeDrawer();
+            if (pageId === 'form-av-mensal') {
+                if (!paginaBloqueada.avMensal) {
+                } else {
+                    verificarBloqueioPagina('form-av-mensal');
+                }
+            }
+            if (pageId === 'profile') {
+                document.getElementById('profile-info-nick').textContent = usuarioEncontrado.nickname;
+                document.getElementById('profile-info-cargo-executivo').textContent = usuarioEncontrado.cargo_executivo || 'Não definido';
+                document.getElementById('profile-info-cargo').textContent = usuarioEncontrado.cargo;
+                carregarEstatisticasPerfil();
+            }
+            fecharMenuMobile();
             fecharTodosDropdowns();
         }
 
@@ -984,13 +1082,13 @@
             `;
         }
 
-        function openDrawer() {
+        function abrirMenuMobile() {
             document.getElementById('side-drawer').classList.add('active');
             document.getElementById('drawer-overlay').classList.add('active');
             document.body.style.overflow = 'hidden';
         }
 
-        function closeDrawer() {
+        function fecharMenuMobile() {
             document.getElementById('side-drawer').classList.remove('active');
             document.getElementById('drawer-overlay').classList.remove('active');
             document.body.style.overflow = '';
@@ -1761,30 +1859,39 @@
                 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
                 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
             ];
+
             const mesSelect = document.getElementById('av-mes');
-            const filterMes = document.getElementById('filter-mes');
-            const linkMes = document.getElementById('link-mes');
-            const hoje = new Date();
-            const mesAtual = hoje.getMonth();
-            
             if (mesSelect) {
+                const hoje = new Date();
+                const mesAtual = hoje.getMonth();
                 mesSelect.innerHTML = meses.map((m, i) => `<option value="${i+1}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('');
             }
-            
+
+            const filterMes = document.getElementById('filter-mes');
             if (filterMes) {
-                filterMes.innerHTML = '<option value="">Todos</option>' + meses.map((m, i) => `<option value="${i+1}">${m}</option>`).join('');
+                filterMes.innerHTML = '<option value="">Todos os meses</option>' + 
+                    meses.map((m, i) => `<option value="${i+1}">${m}</option>`).join('');
             }
-            
+
+            const linkMes = document.getElementById('link-mes');
             if (linkMes) {
-                linkMes.innerHTML = meses.map((m, i) => `<option value="${i+1}">${m}</option>`).join('');
+                linkMes.innerHTML = '<option value="">Selecione o mês</option>' + 
+                    meses.map((m, i) => `<option value="${i+1}">${m}</option>`).join('');
             }
-            
+
             const filterAno = document.getElementById('filter-ano');
             if (filterAno) {
+                const hoje = new Date();
                 const anoAtual = hoje.getFullYear();
                 filterAno.innerHTML = `<option value="${anoAtual}">${anoAtual}</option><option value="${anoAtual-1}">${anoAtual-1}</option>`;
             }
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                preencherMeses();
+            }, 500);
+        });
 
         function preencherDetalhamentos() {
             const detalhamentos = [
@@ -1814,48 +1921,51 @@
             `).join('');
         }
 
-        function carregarLinks() {
+        async function carregarLinks() {
             const container = document.getElementById('links-container');
-            if (!container) return;
+            const cardsAv = document.getElementById('avs-cards');
             
             const links = DADOS.links || [];
-            
-            if (links.length === 0) {
-                container.innerHTML = '<p style="color: #888; font-size: 11px; text-align: center;">Nenhum link adicionado.</p>';
-                return;
+
+            if (container) {
+                if (links.length === 0) {
+                    container.innerHTML = '<p style="color: #888; font-size: 11px; text-align: center;">Nenhum link adicionado.</p>';                } else {
+                    container.innerHTML = links.sort((a, b) => b.mes - a.mes).map(l => `
+                        <div class="link-item">
+                            <div class="link-info">
+                                <div class="link-mes">Mês ${l.mes}/${l.ano || new Date().getFullYear()}</div>
+                                <div class="link-url"><a href="${l.url}" target="_blank">${l.url.length > 30 ? l.url.substring(0, 30) + '...' : l.url}</a></div>
+                                <div style="font-size: 9px; color: #888;">${l.descricao || 'Resultado da avaliação mensal.'}</div>
+                            </div>
+                            <div class="link-actions">
+                                ${verificarPermissaoAdmin() ? `
+                                    <button class="btn-remover-pequeno" onclick="removerLink('${l.id}')"><i class="ph ph-trash"></i></button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                }
             }
-            
-            container.innerHTML = links.sort((a, b) => b.mes - a.mes).map(l => `
-                <div class="link-item">
-                    <div class="link-info">
-                        <div class="link-mes">Mês ${l.mes}/${l.ano || new Date().getFullYear()}</div>
-                        <div class="link-url"><a href="${l.url}" target="_blank">${l.url.length > 30 ? l.url.substring(0, 30) + '...' : l.url}</a></div>
-                        <div style="font-size: 9px; color: #888;">${l.descricao || 'Resultado da avaliação mensal.'}</div>
-                    </div>
-                    <div class="link-actions">
-                        ${verificarPermissaoAdmin() ? `
-                            <button class="btn-remover-pequeno" onclick="removerLink('${l.id}')"><i class="ph ph-trash"></i></button>
-                        ` : ''}
-                    </div>
-                </div>
-            `).join('');
-            
-            const cardsAv = document.getElementById('avs-cards');
+
             if (cardsAv) {
-                cardsAv.innerHTML = links.map(l => `
-                    <a href="${l.url}" target="_blank" class="card-link">
-                        <div class="card-header">
-                            <span class="card-title">Mês ${l.mes}/${l.ano || new Date().getFullYear()}</span>
-                            <span class="card-date">${new Date(l.data_criacao || Date.now()).toLocaleDateString('pt-BR')}</span>
-                        </div>
-                        <div class="card-content">
-                            ${l.descricao || 'Resultado da avaliação mensal.'}
-                        </div>
-                        <div class="card-author">
-                            Por: ${l.criado_por || 'Sistema'}
-                        </div>
-                    </a>
-                `).join('') || '<div class="empty-state"><i class="ph ph-link"></i><p>Nenhum link adicionado.</p></div>';
+                if (links.length === 0) {
+                    cardsAv.innerHTML = '<div class="empty-state"><i class="ph ph-link"></i><p>Nenhum link adicionado.</p></div>';
+                } else {
+                    cardsAv.innerHTML = links.sort((a, b) => b.mes - a.mes).map(l => `
+                        <a href="${l.url}" target="_blank" class="card-link">
+                            <div class="card-header">
+                                <span class="card-title">Mês ${l.mes}/${l.ano || new Date().getFullYear()}</span>
+                                <span class="card-date">${new Date(l.data_criacao || Date.now()).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                            <div class="card-content">
+                                ${l.descricao || 'Resultado da avaliação mensal.'}
+                            </div>
+                            <div class="card-author">
+                                Por: ${l.criado_por || 'Sistema'}
+                            </div>
+                        </a>
+                    `).join('');
+                }
             }
         }
 
@@ -1872,27 +1982,30 @@
             
             if (!DADOS.links) DADOS.links = [];
             
+            const hoje = new Date();
+            const anoAtual = hoje.getFullYear();
+            
             const novoLink = {
                 id: Date.now() + Math.random(),
                 mes: parseInt(mes),
-                ano: new Date().getFullYear(),
+                ano: anoAtual,
                 url: url,
                 descricao: 'Resultado da avaliação mensal.',
                 criado_por: usuarioEncontrado.nickname,
-                data_criacao: new Date().toISOString()
+                data_criacao: hoje.toISOString()
             };
             
             DADOS.links.push(novoLink);
             
             await registrarLog('link', 'adicao_link', usuarioEncontrado.nickname, novoLink);
-            
             await salvarDados();
             
             document.getElementById('link-url').value = '';
-            
+            document.getElementById('link-mes').value = '';
+
             carregarLinks();
             
-            mostrarToast('Link adicionado', 'O link foi adicionado ao Registro das AVs', 'success');
+            mostrarToast('Link adicionado', 'O link foi adicionado ao registro.', 'success');
         }
 
         async function removerLink(id) {
@@ -1903,9 +2016,8 @@
             DADOS.links = (DADOS.links || []).filter(l => l.id != id);
             
             await registrarLog('link', 'remocao_link', usuarioEncontrado.nickname, { link_id: id });
-            
             await salvarDados();
-            
+
             carregarLinks();
             
             mostrarToast('Link removido', 'O link foi removido com sucesso', 'success');
@@ -2136,14 +2248,14 @@
             preencherMeses();
             preencherDetalhamentos();
             preencherCheckboxes();
+            carregarDiasSelect();
         }
 
         function setupEventListeners() {
-            const menuBtn = document.getElementById('mobile-menu-btn');
-            if (menuBtn) menuBtn.addEventListener('click', openDrawer);
-            
             const drawerOverlay = document.getElementById('drawer-overlay');
-            if (drawerOverlay) drawerOverlay.addEventListener('click', closeDrawer);
+            if (drawerOverlay) {
+                drawerOverlay.addEventListener('click', fecharMenuMobile);
+            }
             
             const formAvMensal = document.getElementById('form-av-mensal');
             if (formAvMensal) formAvMensal.addEventListener('submit', handleAvMensalSubmit);
